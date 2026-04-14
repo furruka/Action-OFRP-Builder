@@ -72,6 +72,7 @@ jobs:
 
     - name: Prepare the build environment
       run: |
+        sudo sed -i 's/azure.archive.ubuntu.com/mirrors.aliyun.com/g' /etc/apt/sources.list
         SAFE_JAVA_HOME=$JAVA_HOME_11_X64
         
         sudo rm -f /etc/apt/apt.conf.d/docker-clean
