@@ -52,10 +52,12 @@ jobs:
  
     - name: Check Out
       uses: actions/checkout@v4
-      
-    - name: Cleanup
+
+    - name: Set Aliyun APT Mirrors
       run: |
         sudo sed -i 's/azure.archive.ubuntu.com/mirrors.aliyun.com/g' /etc/apt/sources.list
+
+    - name: Cleanup
       uses: rokibhasansagar/slimhub_actions@main
 
     - name: Cache APT packages
@@ -74,7 +76,6 @@ jobs:
 
     - name: Prepare the build environment
       run: |
-        sudo sed -i 's/azure.archive.ubuntu.com/mirrors.aliyun.com/g' /etc/apt/sources.list
         SAFE_JAVA_HOME=$JAVA_HOME_11_X64
         
         sudo rm -f /etc/apt/apt.conf.d/docker-clean
