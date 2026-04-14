@@ -1,4 +1,4 @@
-Name: Recovery Build
+Name: OrangeFox Build
 
 on:
   workflow_dispatch:
@@ -24,10 +24,10 @@ on:
         required: true
         default: 'device/oplus/qqcandy'
       COMMON_TREE_URL:
-        description: 'COMMON_TREE_URL'
+        description: 'COMMON_TREE_URL (if no common tree, leave blank)'
         required: false
       COMMON_PATH:
-        description: 'COMMON_PATH'
+        description: 'COMMON_PATH (if no common tree, leave blank)'
         required: false
       DEVICE_NAME:
         description: 'DEVICE_NAME'
@@ -53,7 +53,7 @@ jobs:
     - name: Check Out
       uses: actions/checkout@v4
 
-    - name: Cache APT
+    - name: Cache APT packages
       uses: actions/cache@v4
       with:
         path: /var/cache/apt/archives
@@ -70,10 +70,10 @@ jobs:
         echo "workspace-folder=$(pwd)" >> $GITHUB_OUTPUT
       id: pwd
 
-    - name: Prepare environment
+    - name: Prepare the build environment
       run: |
         sudo rm -f /etc/apt/apt.conf.d/docker-clean
-        sudo apt update
+        sudo apt update && sudo apt upgrade -y
         DEBIAN_FRONTEND=noninteractive sudo apt install -yq \
             linux-modules-extra-$(uname -r) \
             git python3 tar aria2 ccache
@@ -90,14 +90,23 @@ jobs:
         distribution: 'zulu'
         java-version: '11'
 
+    - name: Setup SSH Keys
+      if: ${{ startsWith(github.event.inputs.SYNC_URL, 'git@github.com') || 
+          startsWith(github.event.inputs.DEVICE_TREE_URL, 'git@github.com') ||
+          startsWith(github.event.inputs.COMMON_TREE_URL, 'git@github.com') }}
+      uses: webfactory/ssh-agent@v0.9.0
+      with:
+          ssh-private-key: |
+            ${{ secrets.SSH_PRIVATE_KEY }}
+
     - name: Setup CCache
       uses: actions/cache@v4
       with:
         path: ~/.ccache
-        key: ${{ runner.os }}-fox-ccache-${{ github.sha }}
-        restore-keys: ${{ runner.os }}-fox-ccache-
+        key: ${{ runner.os }}-fox-ccache-r12-${{ github.sha }}
+        restore-keys: ${{ runner.os }}-fox-ccache-r12-
 
-    - name: Sync sources
+    - name: Sync OrangeFox sources and minimal manifest
       run: |
         cd ${{ steps.pwd.outputs.workspace-folder }}
         git clone ${{ github.event.inputs.SYNC_URL }}
@@ -140,6 +149,12 @@ jobs:
       working-directory: ${{ steps.pwd.outputs.workspace-folder }}
       continue-on-error: true
 
+    - name: Check the output directory before uploading
+      run: |
+        ls -al ${{ steps.pwd.outputs.workspace-folder }}/fox_${{ github.event.inputs.MANIFEST_BRANCH }}/out/target/product/
+        echo
+        ls -al ${{ steps.pwd.outputs.workspace-folder }}/fox_${{ github.event.inputs.MANIFEST_BRANCH }}/out/target/product/${{ github.event.inputs.DEVICE_NAME }}/
+
     - name: Upload to Release
       uses: softprops/action-gh-release@v2
       with:
@@ -148,5 +163,10 @@ jobs:
           ${{ steps.pwd.outputs.workspace-folder }}/fox_${{ github.event.inputs.MANIFEST_BRANCH }}/out/target/product/${{ github.event.inputs.DEVICE_NAME }}/*.zip
         name: ${{ github.event.inputs.DEVICE_NAME }}-${{ github.run_id }}
         tag_name: ${{ github.run_id }}
+        body: |
+          Manifest: ${{ github.event.inputs.MANIFEST_BRANCH }}
+          Device: ${{ github.event.inputs.DEVICE_NAME }}
+          Target: ${{ github.event.inputs.BUILD_TARGET }}
+          UI Version: OrangeFox R12.0 New UI
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
