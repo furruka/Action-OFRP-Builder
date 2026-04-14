@@ -1,4 +1,4 @@
-name: Recovery Build
+Name: Recovery Build
 
 on:
   workflow_dispatch:
@@ -24,10 +24,10 @@ on:
         required: true
         default: 'device/oplus/qqcandy'
       COMMON_TREE_URL:
-        description: 'COMMON_TREE_URL (if no common tree, leave blank)'
+        description: 'COMMON_TREE_URL'
         required: false
       COMMON_PATH:
-        description: 'COMMON_PATH (if no common tree, leave blank)'
+        description: 'COMMON_PATH'
         required: false
       DEVICE_NAME:
         description: 'DEVICE_NAME'
@@ -50,11 +50,16 @@ jobs:
       contents: write
     steps:
  
-    # You might want to Checkout your repo first, but not mandatory
     - name: Check Out
       uses: actions/checkout@v4
 
-    # Cleanup The Actions Workspace Using Custom Composite Run Actions
+    - name: Cache APT
+      uses: actions/cache@v4
+      with:
+        path: /var/cache/apt/archives
+        key: ${{ runner.os }}-apt-v1
+        restore-keys: ${{ runner.os }}-apt-
+
     - name: Cleanup
       uses: rokibhasansagar/slimhub_actions@main
 
@@ -65,12 +70,13 @@ jobs:
         echo "workspace-folder=$(pwd)" >> $GITHUB_OUTPUT
       id: pwd
 
-    - name: Prepare the build environment
+    - name: Prepare environment
       run: |
-        sudo apt update && sudo apt upgrade -y
+        sudo rm -f /etc/apt/apt.conf.d/docker-clean
+        sudo apt update
         DEBIAN_FRONTEND=noninteractive sudo apt install -yq \
             linux-modules-extra-$(uname -r) \
-            git python3 tar aria2
+            git python3 tar aria2 ccache
         git clone https://gitlab.com/OrangeFox/misc/scripts
         cd scripts
         sudo bash setup/android_build_env.sh
@@ -84,16 +90,14 @@ jobs:
         distribution: 'zulu'
         java-version: '11'
 
-    - name: Setup SSH Keys
-      if: ${{ startsWith(github.event.inputs.MANIFEST_URL, 'git@github.com') || 
-          startsWith(github.event.inputs.DEVICE_TREE_URL, 'git@github.com') ||
-          startsWith(github.event.inputs.COMMON_TREE_URL, 'git@github.com') }}
-      uses: webfactory/ssh-agent@v0.9.0
+    - name: Setup CCache
+      uses: actions/cache@v4
       with:
-          ssh-private-key: |
-            ${{ secrets.SSH_PRIVATE_KEY }}
+        path: ~/.ccache
+        key: ${{ runner.os }}-fox-ccache-${{ github.sha }}
+        restore-keys: ${{ runner.os }}-fox-ccache-
 
-    - name: Sync OrangeFox sources and minimal manifest
+    - name: Sync sources
       run: |
         cd ${{ steps.pwd.outputs.workspace-folder }}
         git clone ${{ github.event.inputs.SYNC_URL }}
@@ -124,19 +128,17 @@ jobs:
     - name: Building recovery
       run: |
         cd ${{ steps.pwd.outputs.workspace-folder }}/fox_${{ github.event.inputs.MANIFEST_BRANCH }}
+        export USE_CCACHE=1
+        export CCACHE_DIR=$HOME/.ccache
+        ccache -M 5G
         set +e
         source build/envsetup.sh
         export ALLOW_MISSING_DEPENDENCIES=true
         set -e
         lunch ${{ github.event.inputs.MAKEFILE_NAME }}-eng && make clean && mka adbd ${{ github.event.inputs.BUILD_TARGET }}image -j$(nproc --all)
+        ccache -s
       working-directory: ${{ steps.pwd.outputs.workspace-folder }}
       continue-on-error: true
-
-    - name: Check the output directory before uploading
-      run: |
-        ls -al ${{ steps.pwd.outputs.workspace-folder }}/fox_${{ github.event.inputs.MANIFEST_BRANCH }}/out/target/product/
-        echo
-        ls -al ${{ steps.pwd.outputs.workspace-folder }}/fox_${{ github.event.inputs.MANIFEST_BRANCH }}/out/target/product/${{ github.event.inputs.DEVICE_NAME }}/
 
     - name: Upload to Release
       uses: softprops/action-gh-release@v2
@@ -146,9 +148,5 @@ jobs:
           ${{ steps.pwd.outputs.workspace-folder }}/fox_${{ github.event.inputs.MANIFEST_BRANCH }}/out/target/product/${{ github.event.inputs.DEVICE_NAME }}/*.zip
         name: ${{ github.event.inputs.DEVICE_NAME }}-${{ github.run_id }}
         tag_name: ${{ github.run_id }}
-        body: |
-          Manifest: ${{ github.event.inputs.MANIFEST_BRANCH }}
-          Device: ${{ github.event.inputs.DEVICE_NAME }}
-          Target: ${{ github.event.inputs.BUILD_TARGET }}
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
