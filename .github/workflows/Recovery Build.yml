@@ -55,7 +55,8 @@ jobs:
 
     - name: Set Aliyun APT Mirrors
       run: |
-        sudo sed -i 's/azure.archive.ubuntu.com/mirrors.aliyun.com/g' /etc/apt/sources.list
+        sudo find /etc/apt/ -name "*.list" -exec sed -i 's/azure.archive.ubuntu.com/mirrors.aliyun.com/g' {} +
+        sudo find /etc/apt/ -name "*.sources" -exec sed -i 's/azure.archive.ubuntu.com/mirrors.aliyun.com/g' {} +
 
     - name: Cleanup
       uses: rokibhasansagar/slimhub_actions@main
