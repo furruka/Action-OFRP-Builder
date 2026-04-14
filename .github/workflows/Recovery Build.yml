@@ -144,6 +144,8 @@ jobs:
 
     - name: Building recovery
       run: |
+        export JAVA_HOME=$JAVA_HOME_11_X64
+        export PATH=$JAVA_HOME/bin:$PATH
         cd ${{ steps.pwd.outputs.workspace-folder }}/fox_${{ github.event.inputs.MANIFEST_BRANCH }}
         export USE_CCACHE=1
         export CCACHE_DIR=$HOME/.ccache
@@ -154,6 +156,9 @@ jobs:
         set -e
         lunch ${{ github.event.inputs.MAKEFILE_NAME }}-eng && make clean && mka adbd ${{ github.event.inputs.BUILD_TARGET }}image -j$(nproc --all)
         ccache -s
+        sudo rm -rf /var/cache/apt/archives/lock
+        sudo rm -rf /var/cache/apt/archives/partial
+        sudo chmod -R 777 /var/cache/apt/archives
       working-directory: ${{ steps.pwd.outputs.workspace-folder }}
       continue-on-error: true
 
