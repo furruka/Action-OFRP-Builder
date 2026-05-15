@@ -48,6 +48,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      actions: write
     steps:
 
     - name: Check Out
@@ -71,18 +72,12 @@ jobs:
         sudo apt-get update
         DEBIAN_FRONTEND=noninteractive sudo apt-get install -yq --no-upgrade \
             linux-modules-extra-$(uname -r) \
-            git python3 tar aria2 ccache neofetch rclone
-
-        git clone https://gitlab.com/OrangeFox/misc/scripts
-        cd scripts
-
-        sudo bash setup/android_build_env.sh
+            git python3 tar aria2 ccache rclone
 
         export JAVA_HOME=$SAFE_JAVA_HOME
         export PATH=$JAVA_HOME/bin:$PATH
 
         sed -i 's/cd -/cd ../g' setup/install_android_sdk.sh
-        sudo bash setup/install_android_sdk.sh
       working-directory: ${{ steps.pwd.outputs.workspace-folder }}
 
     - name: Install OpenJDK
@@ -99,6 +94,30 @@ jobs:
       with:
           ssh-private-key: |
             ${{ secrets.SSH_PRIVATE_KEY }}
+
+    - name: Restore OrangeFox scripts cache
+      id: cache-scripts
+      uses: actions/cache@v4
+      with:
+        path: ${{ steps.pwd.outputs.workspace-folder }}/scripts
+        key: fox-scripts-${{ hashFiles('**/orangefox_sync.sh') || github.run_id }}
+        restore-keys: fox-scripts-
+
+    - name: Clone OrangeFox scripts
+      if: steps.cache-scripts.outputs.cache-hit != 'true'
+      run: |
+        git clone https://gitlab.com/OrangeFox/misc/scripts
+      working-directory: ${{ steps.pwd.outputs.workspace-folder }}
+
+    - name: Setup build environment via scripts
+      run: |
+        SAFE_JAVA_HOME=$JAVA_HOME_11_X64
+        cd scripts
+        sudo bash setup/android_build_env.sh
+        export JAVA_HOME=$SAFE_JAVA_HOME
+        export PATH=$JAVA_HOME/bin:$PATH
+        sudo bash setup/install_android_sdk.sh
+      working-directory: ${{ steps.pwd.outputs.workspace-folder }}
 
     - name: Configure rclone for R2
       run: |
@@ -120,12 +139,24 @@ jobs:
         ccache -M 8G
         ccache -s
 
+    - name: Restore fox source cache
+      id: cache-source
+      uses: actions/cache@v4
+      with:
+        path: ${{ steps.pwd.outputs.workspace-folder }}/fox_${{ github.event.inputs.MANIFEST_BRANCH }}
+        key: fox-source-${{ github.event.inputs.MANIFEST_BRANCH }}
+
     - name: Sync OrangeFox sources and minimal manifest
       run: |
         cd ${{ steps.pwd.outputs.workspace-folder }}
-        git clone ${{ github.event.inputs.SYNC_URL }}
-        cd sync
-        ./orangefox_sync.sh --branch ${{ github.event.inputs.MANIFEST_BRANCH }} --path ${{ steps.pwd.outputs.workspace-folder }}/fox_${{ github.event.inputs.MANIFEST_BRANCH }}
+        if [ ! -d "fox_${{ github.event.inputs.MANIFEST_BRANCH }}/.repo" ]; then
+          cd sync
+          ./orangefox_sync.sh --branch ${{ github.event.inputs.MANIFEST_BRANCH }} --path ${{ steps.pwd.outputs.workspace-folder }}/fox_${{ github.event.inputs.MANIFEST_BRANCH }}
+        else
+          echo "Cache hit, running incremental sync..."
+          cd fox_${{ github.event.inputs.MANIFEST_BRANCH }}
+          repo sync -c --no-clone-bundle --no-tags --optimized-fetch -j$(nproc --all)
+        fi
       working-directory: ${{ steps.pwd.outputs.workspace-folder }}
 
     - name: Clone device tree
@@ -147,10 +178,6 @@ jobs:
       uses: pierotofy/set-swap-space@master
       with:
         swap-size-gb: 12
-
-    - name: Device Check
-      run: |
-        neofetch
 
     - name: Building recovery
       run: |
