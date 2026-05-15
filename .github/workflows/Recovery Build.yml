@@ -111,14 +111,7 @@ jobs:
     - name: Configure rclone for R2
       run: |
         mkdir -p ~/.config/rclone
-        cat > ~/.config/rclone/rclone.conf << 'EOF'
-[r2]
-type = s3
-provider = Cloudflare
-access_key_id = ${{ secrets.R2_ACCESS_KEY }}
-secret_access_key = ${{ secrets.R2_SECRET_KEY }}
-endpoint = ${{ secrets.R2_ENDPOINT }}
-EOF
+        printf '[r2]\ntype = s3\nprovider = Cloudflare\naccess_key_id = ${{ secrets.R2_ACCESS_KEY }}\nsecret_access_key = ${{ secrets.R2_SECRET_KEY }}\nendpoint = ${{ secrets.R2_ENDPOINT }}\n' > ~/.config/rclone/rclone.conf
 
     - name: Restore ccache from R2
       run: |
