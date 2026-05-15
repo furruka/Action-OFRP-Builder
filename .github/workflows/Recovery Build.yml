@@ -71,7 +71,7 @@ jobs:
         sudo apt-get update
         DEBIAN_FRONTEND=noninteractive sudo apt-get install -yq --no-upgrade \
             linux-modules-extra-$(uname -r) \
-            git python3 tar aria2 ccache neofetch
+            git python3 tar aria2 ccache neofetch rclone
 
         git clone https://gitlab.com/OrangeFox/misc/scripts
         cd scripts
@@ -100,14 +100,25 @@ jobs:
           ssh-private-key: |
             ${{ secrets.SSH_PRIVATE_KEY }}
 
-    - name: Setup CCache
-      uses: actions/cache@v4
-      with:
-        path: ~/.ccache
-        key: ${{ runner.os }}-fox-ccache-${{ github.event.inputs.MANIFEST_BRANCH }}-${{ github.event.inputs.DEVICE_NAME }}
-        restore-keys: |
-          ${{ runner.os }}-fox-ccache-${{ github.event.inputs.MANIFEST_BRANCH }}-
-          ${{ runner.os }}-fox-ccache-
+    - name: Configure rclone for R2
+      run: |
+        mkdir -p ~/.config/rclone
+        cat > ~/.config/rclone/rclone.conf << EOF
+        [r2]
+        type = s3
+        provider = Cloudflare
+        access_key_id = ${{ secrets.R2_ACCESS_KEY }}
+        secret_access_key = ${{ secrets.R2_SECRET_KEY }}
+        endpoint = ${{ secrets.R2_ENDPOINT }}
+        EOF
+
+    - name: Restore ccache from R2
+      run: |
+        mkdir -p ~/.ccache
+        rclone sync r2:${{ secrets.R2_BUCKET }}/ccache/${{ github.event.inputs.DEVICE_NAME }} ~/.ccache \
+          --transfers 8 --checkers 16 || echo "No existing ccache found, starting fresh"
+        ccache -M 5G
+        ccache -s
 
     - name: Sync OrangeFox sources and minimal manifest
       run: |
@@ -148,7 +159,6 @@ jobs:
         cd ${{ steps.pwd.outputs.workspace-folder }}/fox_${{ github.event.inputs.MANIFEST_BRANCH }}
         export USE_CCACHE=1
         export CCACHE_DIR=$HOME/.ccache
-        ccache -M 5G
         set +e
         source build/envsetup.sh
         export ALLOW_MISSING_DEPENDENCIES=true
@@ -157,6 +167,13 @@ jobs:
         ccache -s
       working-directory: ${{ steps.pwd.outputs.workspace-folder }}
       continue-on-error: true
+
+    - name: Save ccache to R2
+      if: always()
+      run: |
+        rclone sync ~/.ccache r2:${{ secrets.R2_BUCKET }}/ccache/${{ github.event.inputs.DEVICE_NAME }} \
+          --transfers 8 --checkers 16
+        echo "ccache saved to R2"
 
     - name: Check the output directory before uploading
       run: |
