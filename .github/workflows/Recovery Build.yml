@@ -49,19 +49,12 @@ jobs:
     permissions:
       contents: write
     steps:
- 
+
     - name: Check Out
       uses: actions/checkout@v4
 
     - name: Cleanup
       uses: rokibhasansagar/slimhub_actions@main
-
-    - name: Cache APT packages
-      uses: actions/cache@v4
-      with:
-        path: /var/cache/apt/archives
-        key: ${{ runner.os }}-apt-v1
-        restore-keys: ${{ runner.os }}-apt-
 
     - name: Initialize workspace
       run: |
@@ -73,21 +66,21 @@ jobs:
     - name: Prepare the build environment
       run: |
         SAFE_JAVA_HOME=$JAVA_HOME_11_X64
-        
+
         sudo rm -f /etc/apt/apt.conf.d/docker-clean
-        sudo apt update && sudo apt upgrade -y
-        DEBIAN_FRONTEND=noninteractive sudo apt install -yq \
+        sudo apt-get update
+        DEBIAN_FRONTEND=noninteractive sudo apt-get install -yq --no-upgrade \
             linux-modules-extra-$(uname -r) \
             git python3 tar aria2 ccache neofetch
-        
+
         git clone https://gitlab.com/OrangeFox/misc/scripts
         cd scripts
-        
+
         sudo bash setup/android_build_env.sh
-        
+
         export JAVA_HOME=$SAFE_JAVA_HOME
         export PATH=$JAVA_HOME/bin:$PATH
-        
+
         sed -i 's/cd -/cd ../g' setup/install_android_sdk.sh
         sudo bash setup/install_android_sdk.sh
       working-directory: ${{ steps.pwd.outputs.workspace-folder }}
@@ -99,7 +92,7 @@ jobs:
         java-version: '11'
 
     - name: Setup SSH Keys
-      if: ${{ startsWith(github.event.inputs.SYNC_URL, 'git@github.com') || 
+      if: ${{ startsWith(github.event.inputs.SYNC_URL, 'git@github.com') ||
           startsWith(github.event.inputs.DEVICE_TREE_URL, 'git@github.com') ||
           startsWith(github.event.inputs.COMMON_TREE_URL, 'git@github.com') }}
       uses: webfactory/ssh-agent@v0.9.0
@@ -111,8 +104,10 @@ jobs:
       uses: actions/cache@v4
       with:
         path: ~/.ccache
-        key: ${{ runner.os }}-fox-ccache-r12-${{ github.sha }}
-        restore-keys: ${{ runner.os }}-fox-ccache-r12-
+        key: ${{ runner.os }}-fox-ccache-${{ github.event.inputs.MANIFEST_BRANCH }}-${{ github.event.inputs.DEVICE_NAME }}
+        restore-keys: |
+          ${{ runner.os }}-fox-ccache-${{ github.event.inputs.MANIFEST_BRANCH }}-
+          ${{ runner.os }}-fox-ccache-
 
     - name: Sync OrangeFox sources and minimal manifest
       run: |
@@ -160,9 +155,6 @@ jobs:
         set -e
         lunch ${{ github.event.inputs.MAKEFILE_NAME }}-eng && make clean && mka adbd ${{ github.event.inputs.BUILD_TARGET }}image -j$(nproc --all)
         ccache -s
-        sudo rm -rf /var/cache/apt/archives/lock
-        sudo rm -rf /var/cache/apt/archives/partial
-        sudo chmod -R 777 /var/cache/apt/archives
       working-directory: ${{ steps.pwd.outputs.workspace-folder }}
       continue-on-error: true
 
