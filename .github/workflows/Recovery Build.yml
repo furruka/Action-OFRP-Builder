@@ -117,7 +117,7 @@ jobs:
         mkdir -p ~/.ccache
         rclone sync r2:${{ secrets.R2_BUCKET }}/ccache/${{ github.event.inputs.DEVICE_NAME }} ~/.ccache \
           --transfers 8 --checkers 16 || echo "No existing ccache found, starting fresh"
-        ccache -M 5G
+        ccache -M 8G
         ccache -s
 
     - name: Sync OrangeFox sources and minimal manifest
