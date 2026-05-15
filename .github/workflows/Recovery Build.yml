@@ -66,19 +66,11 @@ jobs:
 
     - name: Prepare the build environment
       run: |
-        SAFE_JAVA_HOME=$JAVA_HOME_11_X64
-
         sudo rm -f /etc/apt/apt.conf.d/docker-clean
         sudo apt-get update
         DEBIAN_FRONTEND=noninteractive sudo apt-get install -yq --no-upgrade \
             linux-modules-extra-$(uname -r) \
             git python3 tar aria2 ccache rclone
-
-        export JAVA_HOME=$SAFE_JAVA_HOME
-        export PATH=$JAVA_HOME/bin:$PATH
-
-        sed -i 's/cd -/cd ../g' setup/install_android_sdk.sh
-      working-directory: ${{ steps.pwd.outputs.workspace-folder }}
 
     - name: Install OpenJDK
       uses: actions/setup-java@v4
@@ -100,7 +92,7 @@ jobs:
       uses: actions/cache@v4
       with:
         path: ${{ steps.pwd.outputs.workspace-folder }}/scripts
-        key: fox-scripts-${{ hashFiles('**/orangefox_sync.sh') || github.run_id }}
+        key: fox-scripts-v1
         restore-keys: fox-scripts-
 
     - name: Clone OrangeFox scripts
@@ -111,25 +103,22 @@ jobs:
 
     - name: Setup build environment via scripts
       run: |
-        SAFE_JAVA_HOME=$JAVA_HOME_11_X64
-        cd scripts
+        cd ${{ steps.pwd.outputs.workspace-folder }}/scripts
         sudo bash setup/android_build_env.sh
-        export JAVA_HOME=$SAFE_JAVA_HOME
-        export PATH=$JAVA_HOME/bin:$PATH
+        sed -i 's/cd -/cd ../g' setup/install_android_sdk.sh
         sudo bash setup/install_android_sdk.sh
-      working-directory: ${{ steps.pwd.outputs.workspace-folder }}
 
     - name: Configure rclone for R2
       run: |
         mkdir -p ~/.config/rclone
-        cat > ~/.config/rclone/rclone.conf << EOF
-        [r2]
-        type = s3
-        provider = Cloudflare
-        access_key_id = ${{ secrets.R2_ACCESS_KEY }}
-        secret_access_key = ${{ secrets.R2_SECRET_KEY }}
-        endpoint = ${{ secrets.R2_ENDPOINT }}
-        EOF
+        cat > ~/.config/rclone/rclone.conf << 'EOF'
+[r2]
+type = s3
+provider = Cloudflare
+access_key_id = ${{ secrets.R2_ACCESS_KEY }}
+secret_access_key = ${{ secrets.R2_SECRET_KEY }}
+endpoint = ${{ secrets.R2_ENDPOINT }}
+EOF
 
     - name: Restore ccache from R2
       run: |
@@ -150,6 +139,7 @@ jobs:
       run: |
         cd ${{ steps.pwd.outputs.workspace-folder }}
         if [ ! -d "fox_${{ github.event.inputs.MANIFEST_BRANCH }}/.repo" ]; then
+          git clone ${{ github.event.inputs.SYNC_URL }} sync
           cd sync
           ./orangefox_sync.sh --branch ${{ github.event.inputs.MANIFEST_BRANCH }} --path ${{ steps.pwd.outputs.workspace-folder }}/fox_${{ github.event.inputs.MANIFEST_BRANCH }}
         else
